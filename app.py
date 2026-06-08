@@ -6,46 +6,41 @@ import matplotlib.patches as mpatches
 import matplotlib.font_manager as fm
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-import subprocess
 import os
 
 # ─────────────────────────────────────────
-# 한글 폰트 설정 (Streamlit Cloud 호환)
+# 한글 폰트 설정 (Streamlit Cloud 호환 안전 버전)
 # ─────────────────────────────────────────
 @st.cache_resource
 def setup_korean_font():
-    """NanumGothic 폰트를 설치하고 matplotlib에 등록합니다."""
-    try:
-        # apt로 나눔 폰트 설치 (Streamlit Cloud / Ubuntu 환경)
-        subprocess.run(
-            ["apt-get", "install", "-y", "fonts-nanum"],
-            capture_output=True, check=True
-        )
-        # matplotlib 폰트 캐시 초기화
-        fm.fontManager.__init__()
-        # 폰트 경로에서 NanumGothic 찾기
-        font_path = None
-        for f in fm.findSystemFonts(fontpaths=None, fontext="ttf"):
-            if "NanumGothic" in f and "Bold" not in f and "Extra" not in f:
-                font_path = f
-                break
-        if font_path:
-            fm.fontManager.addfont(font_path)
-            prop = fm.FontProperties(fname=font_path)
-            plt.rcParams["font.family"] = prop.get_name()
-        else:
-            plt.rcParams["font.family"] = "NanumGothic"
-    except Exception:
-        # 설치 실패 시 시스템에 있는 CJK 계열 폰트 탐색
-        candidates = ["Malgun Gothic", "AppleGothic", "UnDotum", "NanumGothic",
-                      "WenQuanYi Micro Hei", "Noto Sans CJK KR"]
-        available = {f.name for f in fm.fontManager.ttflist}
-        for c in candidates:
-            if c in available:
-                plt.rcParams["font.family"] = c
-                break
-    finally:
-        plt.rcParams["axes.unicode_minus"] = False  # 마이너스 기호 깨짐 방지
+    """시스템에 설치된 나눔고딕 또는 CJK 폰트를 찾아 matplotlib에 등록합니다."""
+    # 사용 가능한 한글 폰트 후보군
+    candidates = ["NanumGothic", "Malgun Gothic", "AppleGothic", "Noto Sans CJK KR", "NanumMyeongjo"]
+    available = {f.name for f in fm.fontManager.ttflist}
+    
+    # 시스템 폰트 경로 다시 읽기
+    for f in fm.findSystemFonts(fontpaths=None, fontext="ttf"):
+        if "Nanum" in f or "Gothic" in f:
+            try:
+                fm.fontManager.addfont(f)
+            except:
+                pass
+
+    # 업데이트된 폰트 리스트 확보
+    available = {f.name for f in fm.fontManager.ttflist}
+    
+    font_set = False
+    for c in candidates:
+        if c in available:
+            plt.rcParams["font.family"] = c
+            font_set = True
+            break
+            
+    if not font_set:
+        # 폰트를 못 찾았을 때를 대비한 기본 고딕 설정
+        plt.rcParams["font.family"] = "sans-serif"
+        
+    plt.rcParams["axes.unicode_minus"] = False  # 마이너스 기호 깨짐 방지
 
 setup_korean_font()
 
@@ -174,7 +169,6 @@ def train_model():
     ])
 
     data = np.vstack([c0, c1, c2])
-    labels_true = np.array([0]*30 + [1]*30 + [2]*30)
 
     scaler = StandardScaler()
     data_scaled = scaler.fit_transform(data)
@@ -182,8 +176,6 @@ def train_model():
     kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
     kmeans.fit(data_scaled)
 
-    # 클러스터 레이블을 실제 의미에 맞게 재매핑
-    # (KMeans 결과가 항상 0,1,2 순서가 아닐 수 있으므로 중심점으로 매핑)
     centers_original = scaler.inverse_transform(kmeans.cluster_centers_)
     smoking_order = np.argsort(centers_original[:, 0])  # 흡연량 기준 정렬
     label_map = {smoking_order[0]: 0, smoking_order[1]: 1, smoking_order[2]: 2}
@@ -251,7 +243,7 @@ def draw_scatter(smoking_input, alcohol_input, predicted_cluster):
     ax.grid(True, linestyle="--", alpha=0.4, color="#ccc")
     ax.spines[["top", "right"]].set_visible(False)
 
-    legend = ax.legend(
+    ax.legend(
         loc="upper left",
         fontsize=9,
         framealpha=0.9,
@@ -289,7 +281,6 @@ st.divider()
 # ── 분석 버튼 ──
 if st.button("🔍 군집 분석하기"):
     cluster = predict_cluster(age, smoking, alcohol)
-    cluster_name = CLUSTER_NAMES[cluster]
     box_class = RESULT_BOX_CLASS[cluster]
 
     # 결과 메시지
